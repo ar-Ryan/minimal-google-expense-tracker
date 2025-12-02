@@ -17,6 +17,7 @@ Follow these steps to set up and use the expense tracker:
    - In the sheet, go to **Extensions > Apps Script**.
    - Paste the contents of `functions.gs` into the script editor.
    - Save the script.
+   - Set up the automatic trigger: Click the clock icon (Triggers) in the Apps Script editor, add a new trigger for the `onFormSubmit` function, select event source "From spreadsheet", event type "On form submit", and save.
 
 3. **Start Tracking Expenses:**
    - Open the Google Form (use the URL logged in step 1).
