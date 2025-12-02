@@ -1,18 +1,39 @@
+// Helper function to get the form response sheet
+function getResponseSheet(ss) {
+  // First, check for the renamed sheet
+  var sheet = ss.getSheetByName("Expense Data");
+  if (sheet) return sheet;
+  
+  // Fallback to any sheet starting with "Form Responses"
+  var sheets = ss.getSheets();
+  for (var i = 0; i < sheets.length; i++) {
+    var name = sheets[i].getName();
+    if (name.indexOf("Form Responses") === 0) {
+      return sheets[i];
+    }
+  }
+  return null; // Not found
+}
+
 // ------------------- ON FORM SUBMIT -------------------
 function onFormSubmit(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var responseSheet = ss.getSheetByName("Form Responses 1");
+  var responseSheet = e.range.getSheet(); // Get the sheet from the event range
   if (!responseSheet) return;
 
   // Get submitted row
   var row = e.range.getRow();
   var rowData = responseSheet.getRange(row, 1, 1, responseSheet.getLastColumn()).getValues()[0];
 
+
   var timestamp = rowData[0];
-  var monthSheetName = Utilities.formatDate(timestamp, Session.getScriptTimeZone(), "yyyy-MM");
   var year = timestamp.getFullYear();
+  var month = timestamp.getMonth(); // 0-based
+  var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  var monthSheetName = monthNames[month] + " " + year;
 
   // ------------------- MONTHLY SHEET -------------------
+
   var monthSheet = ss.getSheetByName(monthSheetName);
   if (!monthSheet) {
     monthSheet = ss.insertSheet(monthSheetName);
@@ -46,22 +67,30 @@ function updateMonthlySummary(monthSheet) {
   monthSheet.getRange("G1").setValue("Category Summary");
 
   // Write dynamic categories
-  monthSheet.getRange(2, 7, categories.length, 1).setValues(categories.map(c => [c]));
+  if (categories.length > 0) {
+    monthSheet.getRange(2, 7, categories.length, 1).setValues(categories.map(c => [c]));
+    monthSheet.getRange(2, 7, categories.length, 1).setBorder(false, false, false, true, null, null); // Right border for categories
 
-  // Add SUMIF formulas
-  for (var i = 0; i < categories.length; i++) {
-    var r = i + 2;
-    monthSheet.getRange(r, 8).setFormula(`=SUMIF(C:C, G${r}, B:B)`);
+    // Add SUMIF formulas
+    for (var i = 0; i < categories.length; i++) {
+      var r = i + 2;
+      monthSheet.getRange(r, 8).setFormula(`=SUMIF(C:C, G${r}, B:B)`).setNumberFormat('₹#,##0.00');
+    }
+    monthSheet.getRange(2, 8, categories.length, 1).setBorder(false, false, false, true, null, null); // Right border for amounts
   }
 
   // Add grand total
-  monthSheet.getRange("G" + (categories.length + 3)).setValue("Total:");
-  monthSheet.getRange("H" + (categories.length + 3)).setFormula("=SUM(B:B)");
+  var totalRow = categories.length + 3;
+  monthSheet.getRange("G" + totalRow).setValue("Total:").setFontWeight("bold");
+  monthSheet.getRange("H" + totalRow).setFormula("=SUM(B:B)").setNumberFormat('₹#,##0.00').setFontWeight("bold");
+  monthSheet.getRange(totalRow, 7, 1, 2).setBorder(true, false, true, true, null, null); // Top and bottom borders for total
+  // Add some spacing below summary
+  monthSheet.getRange(totalRow + 1, 7, 2, 2).clearContent();
 }
 
 // ------------------- YEARLY SUMMARY -------------------
 function updateYearlySummary(ss, year) {
-  var yearSheetName = "Summary " + year;
+  var yearSheetName = year + " Report";
   var yearSheet = ss.getSheetByName(yearSheetName);
   
   if (!yearSheet) {
@@ -71,7 +100,13 @@ function updateYearlySummary(ss, year) {
   }
 
   // 1️⃣ Collect all months and unique categories
-  var months = ss.getSheets().filter(s => new RegExp("^" + year + "-\\d{2}$").test(s.getName()));
+  var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+  var months = ss.getSheets().filter(s => {
+    for (var i = 0; i < monthNames.length; i++) {
+      if (s.getName() === monthNames[i] + " " + year) return true;
+    }
+    return false;
+  });
   var allCategoriesSet = new Set();
   months.forEach(monthSheet => {
     var lastRow = monthSheet.getLastRow();
@@ -111,9 +146,9 @@ function updateYearlySummary(ss, year) {
     var total = monthAmounts.reduce((a, b) => a + Number(b), 0);
     yearSheet.appendRow(["Total", total]);
 
-    // Format the amounts as currency
+    // Format the amounts as INR currency
     var lastDataRow = yearSheet.getLastRow();
-    yearSheet.getRange(headerRow + 1, 2, lastDataRow - headerRow).setNumberFormat("$#,##0.00");
+    yearSheet.getRange(headerRow + 1, 2, lastDataRow - headerRow).setNumberFormat('₹#,##0.00');
 
     // Add an empty spacer row safely
     yearSheet.appendRow([""]);
@@ -127,25 +162,31 @@ function updateYearlySummary(ss, year) {
 // ------------------- Run to Refresh -------------------
 function refreshAllSummaries() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var responseSheet = ss.getSheetByName("Form Responses 1");
+  var responseSheet = getResponseSheet(ss);
   if (!responseSheet) return;
 
   var data = responseSheet.getRange(2, 1, responseSheet.getLastRow()-1, responseSheet.getLastColumn()).getValues();
 
+
   // Track all months present in the data
   var monthsSet = new Set();
+  var monthNames = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
   data.forEach(row => {
     var timestamp = row[0];
     if (timestamp instanceof Date) {
-      var monthName = Utilities.formatDate(timestamp, Session.getScriptTimeZone(), "yyyy-MM");
-      monthsSet.add(monthName);
+      var year = timestamp.getFullYear();
+      var month = timestamp.getMonth();
+      var monthSheetName = monthNames[month] + " " + year;
+      monthsSet.add(monthSheetName);
     }
   });
+
 
   // Delete old monthly sheets (optional: keep for safety)
   ss.getSheets().forEach(sheet => {
     var name = sheet.getName();
-    if (/^\d{4}-\d{2}$/.test(name)) { // matches YYYY-MM
+    // Remove sheets matching 'Month YYYY' for any month
+    if (monthNames.some(mn => name.startsWith(mn + " "))) {
       ss.deleteSheet(sheet);
     }
   });
@@ -160,8 +201,10 @@ function refreshAllSummaries() {
     data.forEach(row => {
       var timestamp = row[0];
       if (timestamp instanceof Date) {
-        var rowMonth = Utilities.formatDate(timestamp, Session.getScriptTimeZone(), "yyyy-MM");
-        if (rowMonth === monthName) {
+        var year = timestamp.getFullYear();
+        var month = timestamp.getMonth();
+        var expectedMonthName = monthNames[month] + " " + year;
+        if (expectedMonthName === monthName) {
           monthSheet.appendRow(row);
         }
       }

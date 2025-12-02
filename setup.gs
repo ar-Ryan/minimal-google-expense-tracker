@@ -21,22 +21,26 @@ function setupExpenseTracker() {
 
   // ------------------- CREATE GOOGLE SHEET -------------------
   var ss = SpreadsheetApp.create("Expense Tracker Data");
-  var sheet = ss.getActiveSheet();
-  sheet.setName("Form Responses 1");
-  
-  // Add headers manually (for reference)
-  sheet.appendRow(["Timestamp", "Amount", "Category", "Notes"]);
   
   // ------------------- LINK FORM TO SHEET -------------------
+  // This will automatically create "Form Responses 1" sheet with proper headers
   form.setDestination(FormApp.DestinationType.SPREADSHEET, ss.getId());
+  
+  // Rename the response sheet to something meaningful
+  var responseSheet = ss.getSheetByName("Form Responses 1");
+  if (responseSheet) {
+    responseSheet.setName("Expense Data");
+  }
+  
+  // Delete the default empty sheet
+  var defaultSheet = ss.getSheetByName("Sheet1");
+  if (defaultSheet) {
+    ss.deleteSheet(defaultSheet);
+  }
   
   // ------------------- LOG LINKS -------------------
   Logger.log("Form URL: " + form.getEditUrl());
   Logger.log("Spreadsheet URL: " + ss.getUrl());
-  
-  // ------------------- OPTIONAL: CREATE INITIAL YEARLY SUMMARY SHEET -------------------
-  var summarySheet = ss.insertSheet("Summary Setup");
-  summarySheet.getRange("A1").setValue("This sheet will later contain yearly summaries.");
   
   Logger.log("Setup complete. Your form and spreadsheet are ready!");
 }
